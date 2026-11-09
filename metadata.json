@@ -1,0 +1,6 @@
+{
+  "name": "الرضوان للحسابات",
+  "description": "نظام الرضوان لإدارة الحسابات والمخازن (ERP System) - نظام محاسبي متكامل يدعم الفواتير، السندات، المخازن، والتقارير الختامية باللغة العربية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
