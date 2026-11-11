@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useERP } from '../../context/ERPContext';
 import { Employee, Job } from '../../types';
 import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { formatCurrency, exportToExcel } from '../../utils/exportUtils';
-import { Edit2, Trash2, Search, UserCheck, Briefcase } from 'lucide-react';
+import { Edit2, Trash2, Search, UserCheck, Briefcase, RefreshCcw } from 'lucide-react';
 import { supabaseRequest } from '../../utils/supabaseService';
 
 export const EmployeesAndJobsView: React.FC = () => {
@@ -23,10 +23,13 @@ export const EmployeesAndJobsView: React.FC = () => {
     editJob,
     deleteJob,
     hasPermission,
-  } = useERP();
+    setEmployees,
+    setJobs,
+  } = useERP() as any;
 
   const [activeSubTab, setActiveSubTab] = useState<'employees' | 'jobs'>('employees');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Employee modal state
   const [isEmpModalOpen, setIsEmpModalOpen] = useState(false);
@@ -50,6 +53,43 @@ export const EmployeesAndJobsView: React.FC = () => {
   const canCreate = hasPermission('employees', 'create');
   const canEdit = hasPermission('employees', 'edit');
   const canDelete = hasPermission('employees', 'delete');
+
+  // دالة لجلب أحدث البيانات مباشرة من Supabase لضمان مزامنة الموبايل والكمبيوتر فوراً
+  const fetchLatestData = async () => {
+    setIsRefreshing(true);
+    try {
+      const jobsRes = await supabaseRequest('jobs', 'GET');
+      if (jobsRes && Array.isArray(jobsRes) && setJobs) {
+        setJobs(jobsRes.map((j: any) => ({ id: j.id, code: j.code, name: j.name })));
+      }
+
+      const empRes = await supabaseRequest('employees', 'GET');
+      if (empRes && Array.isArray(empRes) && setEmployees) {
+        setEmployees(
+          empRes.map((e: any) => ({
+            id: e.id,
+            code: e.code,
+            name: e.name,
+            address: e.address,
+            contactDetails: e.contact_details,
+            monthlySalary: e.monthly_salary,
+            dailySalary: e.daily_salary,
+            openingBalance: e.opening_balance,
+            jobId: e.job_id,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Error fetching latest data:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // جلب البيانات تلقائياً بمجرد فتح الصفحة
+  useEffect(() => {
+    fetchLatestData();
+  }, []);
 
   const openAddEmpModal = () => {
     setEditingEmp(null);
@@ -79,14 +119,13 @@ export const EmployeesAndJobsView: React.FC = () => {
     setIsEmpModalOpen(true);
   };
 
-  // دالة حفظ وإرسال الموظف المربوطة بـ Supabase عبر الخدمة المركزية
   const handleEmpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!empName.trim()) {
       setErrorMsg('يرجى كتابة اسم الموظف');
       return;
     }
-    const selectedJob = jobs.find((j) => j.id === jobId);
+    const selectedJob = jobs.find((j: any) => j.id === jobId);
 
     try {
       if (editingEmp) {
@@ -102,7 +141,6 @@ export const EmployeesAndJobsView: React.FC = () => {
           jobName: selectedJob?.name,
         });
       } else {
-        // إرسال البيانات مباشرة لجدول employees في Supabase
         await supabaseRequest('employees', 'POST', {
           code: empCode,
           name: empName,
@@ -111,7 +149,8 @@ export const EmployeesAndJobsView: React.FC = () => {
           monthly_salary: Number(monthlySalary),
           daily_salary: Number(dailySalary),
           opening_balance: Number(openingBalance),
-        }).catch((err) => console.log('Background sync note:', err));
+          job_id: jobId || null,
+        });
 
         addEmployee({
           code: empCode,
@@ -127,6 +166,7 @@ export const EmployeesAndJobsView: React.FC = () => {
       }
       setIsEmpModalOpen(false);
       setErrorMsg(null);
+      fetchLatestData();
     } catch (err: any) {
       setErrorMsg('حدث خطأ أثناء حفظ الموظف');
     }
@@ -159,36 +199,35 @@ export const EmployeesAndJobsView: React.FC = () => {
       if (editingJob) {
         editJob(editingJob.id, { code: jobCode, name: jobName });
       } else {
-        await supabaseRequest('jobs', 'POST', { code: jobCode, name: jobName })
-          .catch((err) => console.log('Background sync note:', err));
-
+        await supabaseRequest('jobs', 'POST', { code: jobCode, name: jobName });
         addJob({ code: jobCode, name: jobName });
       }
       setIsJobModalOpen(false);
       setErrorMsg(null);
+      fetchLatestData();
     } catch (err: any) {
       setErrorMsg('حدث خطأ أثناء الحفظ');
     }
   };
 
   const filteredEmployees = employees.filter(
-    (e) =>
-      e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.contactDetails.toLowerCase().includes(searchTerm.toLowerCase())
+    (e: any) =>
+      e.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      e.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      e.contactDetails?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredJobs = jobs.filter(
-    (j) =>
-      j.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      j.code.toLowerCase().includes(searchTerm.toLowerCase())
+    (j: any) =>
+      j.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      j.code?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleExcelEmployees = () => {
     exportToExcel(
       'الموظفين',
       ['كود الموظف', 'اسم الموظف', 'الوظيفة', 'العنوان', 'وسائل التواصل', 'الراتب الشهري', 'الراتب اليومي', 'الرصيد الافتتاحي'],
-      filteredEmployees.map((e) => [
+      filteredEmployees.map((e: any) => [
         e.code,
         e.name,
         e.jobName || '',
@@ -211,23 +250,35 @@ export const EmployeesAndJobsView: React.FC = () => {
         canCreate={canCreate}
         onExportExcel={activeSubTab === 'employees' ? handleExcelEmployees : undefined}
       >
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveSubTab('employees')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              activeSubTab === 'employees' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={fetchLatestData}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+            title="تحديث البيانات من السحاب"
           >
-            الموظفين ({employees.length})
+            <RefreshCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            تحديث
           </button>
-          <button
-            onClick={() => setActiveSubTab('jobs')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              activeSubTab === 'jobs' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            الوظائف ({jobs.length})
-          </button>
+
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveSubTab('employees')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                activeSubTab === 'employees' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              الموظفين ({employees.length})
+            </button>
+            <button
+              onClick={() => setActiveSubTab('jobs')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                activeSubTab === 'jobs' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              الوظائف ({jobs.length})
+            </button>
+          </div>
         </div>
       </PageHeader>
 
@@ -271,7 +322,7 @@ export const EmployeesAndJobsView: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredEmployees.map((e) => (
+                  filteredEmployees.map((e: any) => (
                     <tr key={e.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3 px-4 font-mono font-bold text-slate-800">{e.code}</td>
                       <td className="py-3 px-4 font-bold text-slate-900">{e.name}</td>
@@ -320,7 +371,7 @@ export const EmployeesAndJobsView: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {filteredJobs.map((j) => (
+          {filteredJobs.map((j: any) => (
             <div
               key={j.id}
               className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-slate-300 transition-all flex items-center justify-between"
@@ -409,7 +460,7 @@ export const EmployeesAndJobsView: React.FC = () => {
                 className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:border-emerald-500 focus:outline-none"
               >
                 <option value="">اختر الوظيفة...</option>
-                {jobs.map((j) => (
+                {jobs.map((j: any) => (
                   <option key={j.id} value={j.id}>
                     {j.name}
                   </option>
