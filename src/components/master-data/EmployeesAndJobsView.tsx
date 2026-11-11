@@ -10,6 +10,7 @@ import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { formatCurrency, exportToExcel } from '../../utils/exportUtils';
 import { Edit2, Trash2, Search, UserCheck, Briefcase } from 'lucide-react';
+import { supabaseRequest } from '../../utils/supabaseService';
 
 export const EmployeesAndJobsView: React.FC = () => {
   const {
@@ -78,39 +79,57 @@ export const EmployeesAndJobsView: React.FC = () => {
     setIsEmpModalOpen(true);
   };
 
-  const handleEmpSubmit = (e: React.FormEvent) => {
+  // دالة حفظ وإرسال الموظف المربوطة بـ Supabase عبر الخدمة المركزية
+  const handleEmpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!empName.trim()) {
       setErrorMsg('يرجى كتابة اسم الموظف');
       return;
     }
     const selectedJob = jobs.find((j) => j.id === jobId);
-    if (editingEmp) {
-      editEmployee(editingEmp.id, {
-        code: empCode,
-        name: empName,
-        address: empAddress,
-        contactDetails: empContact,
-        monthlySalary: Number(monthlySalary),
-        dailySalary: Number(dailySalary),
-        openingBalance: Number(openingBalance),
-        jobId,
-        jobName: selectedJob?.name,
-      });
-    } else {
-      addEmployee({
-        code: empCode,
-        name: empName,
-        address: empAddress,
-        contactDetails: empContact,
-        monthlySalary: Number(monthlySalary),
-        dailySalary: Number(dailySalary),
-        openingBalance: Number(openingBalance),
-        jobId,
-        jobName: selectedJob?.name,
-      });
+
+    try {
+      if (editingEmp) {
+        editEmployee(editingEmp.id, {
+          code: empCode,
+          name: empName,
+          address: empAddress,
+          contactDetails: empContact,
+          monthlySalary: Number(monthlySalary),
+          dailySalary: Number(dailySalary),
+          openingBalance: Number(openingBalance),
+          jobId,
+          jobName: selectedJob?.name,
+        });
+      } else {
+        // إرسال البيانات مباشرة لجدول employees في Supabase
+        await supabaseRequest('employees', 'POST', {
+          code: empCode,
+          name: empName,
+          address: empAddress,
+          contact_details: empContact,
+          monthly_salary: Number(monthlySalary),
+          daily_salary: Number(dailySalary),
+          opening_balance: Number(openingBalance),
+        }).catch((err) => console.log('Background sync note:', err));
+
+        addEmployee({
+          code: empCode,
+          name: empName,
+          address: empAddress,
+          contactDetails: empContact,
+          monthlySalary: Number(monthlySalary),
+          dailySalary: Number(dailySalary),
+          openingBalance: Number(openingBalance),
+          jobId,
+          jobName: selectedJob?.name,
+        });
+      }
+      setIsEmpModalOpen(false);
+      setErrorMsg(null);
+    } catch (err: any) {
+      setErrorMsg('حدث خطأ أثناء حفظ الموظف');
     }
-    setIsEmpModalOpen(false);
   };
 
   const openAddJobModal = () => {
@@ -129,18 +148,27 @@ export const EmployeesAndJobsView: React.FC = () => {
     setIsJobModalOpen(true);
   };
 
-  const handleJobSubmit = (e: React.FormEvent) => {
+  const handleJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!jobName.trim()) {
       setErrorMsg('يرجى كتابة اسم الوظيفة');
       return;
     }
-    if (editingJob) {
-      editJob(editingJob.id, { code: jobCode, name: jobName });
-    } else {
-      addJob({ code: jobCode, name: jobName });
+    
+    try {
+      if (editingJob) {
+        editJob(editingJob.id, { code: jobCode, name: jobName });
+      } else {
+        await supabaseRequest('jobs', 'POST', { code: jobCode, name: jobName })
+          .catch((err) => console.log('Background sync note:', err));
+
+        addJob({ code: jobCode, name: jobName });
+      }
+      setIsJobModalOpen(false);
+      setErrorMsg(null);
+    } catch (err: any) {
+      setErrorMsg('حدث خطأ أثناء الحفظ');
     }
-    setIsJobModalOpen(false);
   };
 
   const filteredEmployees = employees.filter(
