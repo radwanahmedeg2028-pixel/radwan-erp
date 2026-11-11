@@ -104,11 +104,13 @@ interface ERPContextType {
   deleteSupplier: (id: string) => void;
 
   employees: Employee[];
+  setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>;
   addEmployee: (e: Omit<Employee, 'id' | 'currentBalance'>) => void;
   editEmployee: (id: string, e: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
 
   jobs: Job[];
+  setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
   addJob: (j: Omit<Job, 'id'>) => void;
   editJob: (id: string, j: Partial<Job>) => void;
   deleteJob: (id: string) => void;
@@ -1630,10 +1632,12 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         editSupplier,
         deleteSupplier,
         employees,
+        setEmployees,
         addEmployee,
         editEmployee,
         deleteEmployee,
         jobs,
+        setJobs,
         addJob,
         editJob,
         deleteJob,

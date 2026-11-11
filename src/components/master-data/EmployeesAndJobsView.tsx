@@ -9,8 +9,14 @@ import { Employee, Job } from '../../types';
 import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { formatCurrency, exportToExcel } from '../../utils/exportUtils';
-import { Edit2, Trash2, Search, UserCheck, Briefcase, RefreshCcw } from 'lucide-react';
+import { Edit2, Trash2, Search, Briefcase, RefreshCcw } from 'lucide-react';
 import { supabaseRequest } from '../../utils/supabaseService';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة عميل Supabase للـ Realtime
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseClient = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 export const EmployeesAndJobsView: React.FC = () => {
   const {
@@ -25,7 +31,7 @@ export const EmployeesAndJobsView: React.FC = () => {
     hasPermission,
     setEmployees,
     setJobs,
-  } = useERP() as any;
+  } = useERP();
 
   const [activeSubTab, setActiveSubTab] = useState<'employees' | 'jobs'>('employees');
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,29 +60,36 @@ export const EmployeesAndJobsView: React.FC = () => {
   const canEdit = hasPermission('employees', 'edit');
   const canDelete = hasPermission('employees', 'delete');
 
-  // دالة لجلب أحدث البيانات مباشرة من Supabase لضمان مزامنة الموبايل والكمبيوتر فوراً
+  // دالة لجلب أحدث البيانات مباشرة من Supabase
   const fetchLatestData = async () => {
     setIsRefreshing(true);
     try {
+      let currentJobs = jobs;
       const jobsRes = await supabaseRequest('jobs', 'GET');
       if (jobsRes && Array.isArray(jobsRes) && setJobs) {
-        setJobs(jobsRes.map((j: any) => ({ id: j.id, code: j.code, name: j.name })));
+        currentJobs = jobsRes.map((j: any) => ({ id: j.id, code: j.code, name: j.name }));
+        setJobs(currentJobs);
       }
 
       const empRes = await supabaseRequest('employees', 'GET');
       if (empRes && Array.isArray(empRes) && setEmployees) {
         setEmployees(
-          empRes.map((e: any) => ({
-            id: e.id,
-            code: e.code,
-            name: e.name,
-            address: e.address,
-            contactDetails: e.contact_details,
-            monthlySalary: e.monthly_salary,
-            dailySalary: e.daily_salary,
-            openingBalance: e.opening_balance,
-            jobId: e.job_id,
-          }))
+          empRes.map((e: any) => {
+            const matchedJob = currentJobs.find((j) => j.id === e.job_id);
+            return {
+              id: e.id,
+              code: e.code,
+              name: e.name,
+              address: e.address || '',
+              contactDetails: e.contact_details || '',
+              monthlySalary: Number(e.monthly_salary) || 0,
+              dailySalary: Number(e.daily_salary) || 0,
+              openingBalance: Number(e.opening_balance) || 0,
+              currentBalance: Number(e.opening_balance) || 0,
+              jobId: e.job_id || '',
+              jobName: matchedJob?.name || '',
+            };
+          })
         );
       }
     } catch (err) {
@@ -86,9 +99,34 @@ export const EmployeesAndJobsView: React.FC = () => {
     }
   };
 
-  // جلب البيانات تلقائياً بمجرد فتح الصفحة
+  // جلب البيانات تلقائياً وتفعيل الاستماع اللحظي (Realtime) عند فتح الصفحة
   useEffect(() => {
     fetchLatestData();
+
+    if (!supabaseClient) return;
+
+    // الاستماع للتعديلات على جدول الموظفين والوظائف لتحديث الشاشة فوراً من أي جهاز
+    const channel = supabaseClient
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'employees' },
+        () => {
+          fetchLatestData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'jobs' },
+        () => {
+          fetchLatestData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(channel);
+    };
   }, []);
 
   const openAddEmpModal = () => {
